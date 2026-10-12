@@ -44,7 +44,8 @@ if(OVK_BUILD_TESTS)
   add_executable(ovk_tests
     tests/test_main.cpp
     tests/test_smoke.cpp
-    tests/test_distance.cpp)
+    tests/test_distance.cpp
+    tests/test_topk.cpp)
   target_link_libraries(ovk_tests PRIVATE overveckill)
   target_include_directories(ovk_tests PRIVATE tests)
   ovk_configure(ovk_tests)
