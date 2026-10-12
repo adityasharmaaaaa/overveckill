@@ -91,3 +91,19 @@ std::string to_str(const T& v) {
                     ::ovk_test::to_str(ovk_a) + " vs " +                \
                     ::ovk_test::to_str(ovk_b) + ")");                   \
     } while (0)
+
+#define OVK_CHECK_THROWS(expr, ex_type)                                 \
+    do {                                                                \
+        bool ovk_threw = false;                                         \
+        try {                                                           \
+            (void)(expr);                                               \
+        } catch (const ex_type&) {                                      \
+            ovk_threw = true;                                           \
+        } catch (...) {                                                 \
+        }                                                               \
+        if (!ovk_threw)                                                 \
+            ::ovk_test::report_failure(                                 \
+                __FILE__, __LINE__,                                     \
+                "CHECK_THROWS failed: " #expr " did not throw " #ex_type); \
+    } while (0)
+
