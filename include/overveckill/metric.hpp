@@ -24,6 +24,7 @@ inline std::optional<Metric> parse_metric(std::string_view s){
     if(s=="l2") return Metric::L2;
     if(s=="ip") return Metric::InnerProduct;
     if(s=="cosine") return Metric::Cosine;
+    return std::nullopt;
 }
 
 }
