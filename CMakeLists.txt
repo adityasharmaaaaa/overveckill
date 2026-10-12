@@ -37,3 +37,15 @@ if(OVK_BUILD_EXAMPLES)
   target_link_libraries(hello PRIVATE overveckill)
   ovk_configure(hello)
 endif()
+
+
+if(OVK_BUILD_TESTS)
+  enable_testing()
+  add_executable(ovk_tests
+    tests/test_main.cpp
+    tests/test_smoke.cpp)
+  target_link_libraries(ovk_tests PRIVATE overveckill)
+  target_include_directories(ovk_tests PRIVATE tests)
+  ovk_configure(ovk_tests)
+  add_test(NAME ovk_tests COMMAND ovk_tests)
+endif()
