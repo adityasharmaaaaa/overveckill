@@ -3,7 +3,7 @@
 #include <optional>
 #include <string_view>
 
-namespace overkill{
+namespace overveckill{
 
 enum class Metric{
     L2,
