@@ -10,7 +10,7 @@ Work in progress.
 - [x] Distance metrics (L2, inner product, cosine)
 - [x] Top-k heap
 - [x] Exact flat index (ground truth)
-- [ ] Store layer (external ids, metadata, delete)
+- [x] Store layer (external ids, metadata, upsert/get/erase)
 - [ ] HNSW
 - [ ] Recall auditor, explain mode
 
