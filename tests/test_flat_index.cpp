@@ -189,3 +189,86 @@ OVK_TEST(flat_self_query_finds_itself) {
         OVK_CHECK_NEAR(res[0].distance, 0.0f, 1e-9);
     }
 }
+
+
+OVK_TEST(flat_remove_hides_vector_from_search) {
+    FlatIndex idx(1);
+    const std::vector<float> a{1.0f};
+    const std::vector<float> b{2.0f};
+    const std::vector<float> c{3.0f};
+    idx.add(a);
+    idx.add(b);
+    idx.add(c);
+
+    OVK_CHECK(idx.remove(0));
+    OVK_CHECK(!idx.contains(0));
+    OVK_CHECK_EQ(idx.size(), std::size_t{2});
+    OVK_CHECK_EQ(idx.slot_count(), std::size_t{3});
+
+    const std::vector<float> q{0.0f};
+    const auto res = idx.search(q, 10);
+    OVK_REQUIRE(res.size() == 2);
+    OVK_CHECK_EQ(res[0].id, 1u);
+    OVK_CHECK_EQ(res[1].id, 2u);
+}
+
+OVK_TEST(flat_remove_unknown_or_twice_returns_false) {
+    FlatIndex idx(1);
+    const std::vector<float> a{1.0f};
+    idx.add(a);
+    OVK_CHECK(!idx.remove(7));
+    OVK_CHECK(idx.remove(0));
+    OVK_CHECK(!idx.remove(0));
+    OVK_CHECK_EQ(idx.size(), std::size_t{0});
+    OVK_CHECK_THROWS(idx.get(0), std::out_of_range);
+}
+
+OVK_TEST(flat_add_reuses_freed_slots_last_freed_first) {
+    FlatIndex idx(1);
+    const std::vector<float> a{1.0f};
+    const std::vector<float> b{2.0f};
+    const std::vector<float> c{3.0f};
+    idx.add(a);  // 0
+    idx.add(b);  // 1
+    idx.add(c);  // 2
+    idx.remove(0);
+    idx.remove(2);
+
+    const std::vector<float> d{10.0f};
+    const std::vector<float> e{20.0f};
+    const std::vector<float> f{30.0f};
+    OVK_CHECK_EQ(idx.add(d), 2u);  // most recently freed
+    OVK_CHECK_EQ(idx.add(e), 0u);
+    OVK_CHECK_EQ(idx.add(f), 3u);  // no free slots left: append
+    OVK_CHECK_EQ(idx.slot_count(), std::size_t{4});
+    OVK_CHECK_EQ(idx.size(), std::size_t{4});
+    OVK_CHECK_NEAR(idx.get(2)[0], 10.0f, 1e-9);
+    OVK_CHECK_NEAR(idx.get(0)[0], 20.0f, 1e-9);
+}
+
+OVK_TEST(flat_search_after_removals_matches_reference) {
+    constexpr std::size_t dim = 9;
+    constexpr std::size_t n = 150;
+    constexpr std::size_t k = 8;
+    std::uint32_t state = 31337;
+
+    FlatIndex idx(dim, Metric::L2);
+    for (std::size_t i = 0; i < n; ++i) idx.add(ovk_test::random_vec(dim, state));
+    for (Id id = 0; id < n; id += 3) idx.remove(id);
+
+    for (int qn = 0; qn < 10; ++qn) {
+        const auto q = ovk_test::random_vec(dim, state);
+
+        std::vector<Neighbor> ref;
+        for (std::size_t i = 0; i < n; ++i) {
+            const Id id = static_cast<Id>(i);
+            if (!idx.contains(id)) continue;
+            ref.push_back({id, distance(Metric::L2, q, idx.get(id))});
+        }
+        std::sort(ref.begin(), ref.end());
+        ref.resize(k);
+
+        OVK_CHECK(idx.search(q, k) == ref);
+    }
+}
+
