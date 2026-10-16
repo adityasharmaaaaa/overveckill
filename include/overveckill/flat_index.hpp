@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -33,33 +34,56 @@ public:
 
     std::size_t dim() const noexcept { return dim_; }
     Metric metric() const noexcept { return metric_; }
-    std::size_t size() const noexcept { return data_.size()/dim_;}
 
-    //appends a vector and return its id (ids are 0,1,2,3,.....)
+    std::size_t slot_count() const noexcept { return data_.size()/dim_; }
+    std::size_t size() const noexcept { return slot_count()-free_.size(); }
+
+    bool contains(Id id) const noexcept { return id<slot_count() && live_[id]!=0; }
+
     Id add(std::span<const float> v){
         check_vector(v,"add");
-        if(size()>=std::numeric_limits<Id>::max()){
-            throw std::length_error("Flat index: id space exhausted");
+        
+        if(!free_.empty()){
+            const Id id = free_.back();
+            free_.pop_back();
+            std::copy(v.begin(),v.end(),
+                        data_.data() + static_cast<std::size_t>(id)*dim_);
+            live_[id]=1;
+            return id;
         }
-        const Id id = static_cast<Id>(size());
-        data_.insert(data_.end(), v.begin(), v.end());
+
+        if(slot_count()>=std::numeric_limits<Id>::max()){
+            throw std::length_error("Flatindex: id space exhausted");
+        }
+
+        const Id id = static_cast<Id>(slot_count());
+        data_.insert(data_.end(),v.begin(),v.end());
+        live_.push_back(1);
         return id;
     }
 
+    bool remove(Id id){
+        if(!contains(id)) return false;
+        live_[id]=0;
+        free_.push_back(id);
+        return true;
+    }
+
     std::span<const float> get(Id id) const{
-        if(id>=size()) throw std::out_of_range("Flat index:: get: bad id");
+        if(!contains(id)) throw std::out_of_range("Flat index:: get: bad or removed id");
         return {data_.data()+static_cast<std::size_t>(id)*dim_, dim_};
     }
 
     //returns k nearest vectors, closest first
     //return fewer than k if index holds then fewer than k vectors
-    std::vector<Neighbor> search(std::span<const float>query, std::size_t k)const{
-        check_vector(query,"search");
-        const std::size_t n = size();
-        TopK top(std::min(k,n));
+    std::vector<Neighbor> search(std::span<const float> query, std::size_t k) const {
+        check_vector(query, "search");
+        const std::size_t slots = slot_count();
+        TopK top(std::min(k, size()));  // capped so a huge k can't over-allocate
         const float* base = data_.data();
-        for(std::size_t i=0; i<n; i++){
-            top.push({static_cast<Id>(i),dist_(query.data(),base+i*dim_,dim_)});
+        for (std::size_t i = 0; i < slots; ++i) {
+            if (!live_[i]) continue;
+            top.push({static_cast<Id>(i), dist_(query.data(), base + i * dim_, dim_)});
         }
         return top.take_sorted();
     }
@@ -82,6 +106,8 @@ private:
     Metric metric_;
     DistanceFn dist_;
     std::vector<float> data_;
+    std::vector<std::uint8_t>live_;
+    std::vector<Id>free_;
 };
 
 }
