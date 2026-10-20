@@ -26,3 +26,4 @@ concept VectorIndex = requires(T& idx, const T& cidx, std::span<const float> v, 
     { cidx.search(v, k) } -> std::same_as<std::vector<Neighbor>>;
 };
 
+}
