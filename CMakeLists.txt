@@ -36,6 +36,9 @@ if(OVK_BUILD_EXAMPLES)
   add_executable(hello examples/hello.cpp)
   target_link_libraries(hello PRIVATE overveckill)
   ovk_configure(hello)
+  add_executable(recall_demo examples/recall_demo.cpp)
+  target_link_libraries(recall_demo PRIVATE overveckill)
+  ovk_configure(recall_demo)
 endif()
 
 
