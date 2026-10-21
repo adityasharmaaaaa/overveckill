@@ -3,9 +3,9 @@
 #include "overveckill/version.hpp"
 #include "test_framework.hpp"
 
-OVK_TEST(version_is_0_1_0) {
+OVK_TEST(version_is_0_2_0) {
     OVK_CHECK_EQ(overveckill::version_major, 0);
-    OVK_CHECK_EQ(overveckill::version_minor, 1);
+    OVK_CHECK_EQ(overveckill::version_minor, 2);
     OVK_CHECK_EQ(overveckill::version_patch, 0);
 }
 
