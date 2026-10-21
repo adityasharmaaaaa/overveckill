@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "overveckill/flat_index.hpp"
+#include "overveckill/index.hpp"
 #include "overveckill/metadata.hpp"
 #include "overveckill/metric.hpp"
 #include "overveckill/types.hpp"
@@ -32,9 +33,13 @@ struct Hit {
 
 // Maps user-facing string keys to index slots and keeps metadata.
 // Not thread-safe (yet).
-class Store {
+template <VectorIndex Index>
+class BasicStore {
 public:
-    explicit Store(std::size_t dim, Metric metric = Metric::L2) : index_(dim, metric) {}
+    //wrap an index you configured yourself (e.g. an HnswIndex with custom params).
+    explicit BasicStore(Index index) : index_(std::move(index)) {}
+    //convenience: build the index from just a dimension and metric.
+    explicit BasicStore(std::size_t dim, Metric metric = Metric::L2) : index_(dim, metric) {}
 
     std::size_t dim() const noexcept { return index_.dim(); }
     Metric metric() const noexcept { return index_.metric(); }
@@ -108,9 +113,11 @@ private:
         Metadata metadata;
     };
 
-    FlatIndex index_;
+    Index index_;
     std::unordered_map<std::string, Id> key_to_slot_;
     std::vector<SlotInfo> slots_;  // indexed by slot id; empty entries are free slots
 };
+
+using Store = BasicStore<FlatIndex>;
 
 }  
