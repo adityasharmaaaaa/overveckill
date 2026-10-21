@@ -47,7 +47,8 @@ if(OVK_BUILD_TESTS)
     tests/test_distance.cpp
     tests/test_topk.cpp
     tests/test_flat_index.cpp
-    tests/test_store.cpp)
+    tests/test_store.cpp
+    tests/test_hnsw.cpp)
   target_link_libraries(ovk_tests PRIVATE overveckill)
   target_include_directories(ovk_tests PRIVATE tests)
   ovk_configure(ovk_tests)
