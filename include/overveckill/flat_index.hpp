@@ -4,6 +4,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <istream>
+#include <ostream>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -12,6 +15,7 @@
 
 #include "overveckill/distance.hpp"
 #include "overveckill/metric.hpp"
+#include "overveckill/serialize.hpp"
 #include "overveckill/topk.hpp"
 #include "overveckill/types.hpp"
 
@@ -86,6 +90,67 @@ public:
             top.push({static_cast<Id>(i), dist_(query.data(), base + i * dim_, dim_)});
         }
         return top.take_sorted();
+    }
+
+    // ---- persistence ----------------------------------------------------
+    // Binary format: "OVKF" v1, dim, metric, vectors, live flags, free list.
+    // The free list is saved in order so a loaded index reuses the same slots
+    // as the original would have.
+
+    void save(std::ostream& out) const {
+        io::Writer w(out);
+        w.header("OVKF");
+        w.len(dim_);
+        w.metric(metric_);
+        w.floats(data_);
+        w.ints(live_);
+        w.ints(free_);
+    }
+
+    static FlatIndex load(std::istream& in) {
+        io::Reader r(in);
+        r.header("OVKF", "FlatIndex");
+        const std::size_t dim = r.len();
+        if (dim == 0) throw SerializationError("FlatIndex: dim must be > 0");
+        const Metric metric = r.metric();
+        FlatIndex idx(dim, metric);
+        idx.data_ = r.floats();
+        idx.live_ = r.ints<std::uint8_t>();
+        idx.free_ = r.ints<Id>();
+
+        if (idx.data_.size() % dim != 0) throw SerializationError("FlatIndex: ragged data");
+        const std::size_t slots = idx.slot_count();
+        if (idx.live_.size() != slots) throw SerializationError("FlatIndex: live flags size");
+        std::size_t dead = 0;
+        for (auto f : idx.live_) {
+            if (f > 1) throw SerializationError("FlatIndex: bad live flag");
+            dead += (f == 0);
+        }
+        if (idx.free_.size() != dead) throw SerializationError("FlatIndex: free list size");
+        std::vector<std::uint8_t> seen(slots, 0);
+        for (Id id : idx.free_) {
+            if (id >= slots || idx.live_[id] != 0 || seen[id]) {
+                throw SerializationError("FlatIndex: bad free list");
+            }
+            seen[id] = 1;
+        }
+        for (std::size_t i = 0; i < slots; ++i) {
+            if (!idx.live_[i]) continue;
+            for (std::size_t j = 0; j < dim; ++j) {
+                if (!std::isfinite(idx.data_[i * dim + j])) {
+                    throw SerializationError("FlatIndex: non-finite value");
+                }
+            }
+        }
+        return idx;
+    }
+
+    void save(const std::filesystem::path& path) const {
+        io::save_to_file(path, [this](std::ostream& out) { save(out); });
+    }
+
+    static FlatIndex load(const std::filesystem::path& path) {
+        return io::load_from_file(path, [](std::istream& in) { return load(in); });
     }
 
 private:

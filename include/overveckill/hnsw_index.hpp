@@ -4,6 +4,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <istream>
+#include <ostream>
+#include <sstream>
 #include <limits>
 #include <queue>
 #include <random>
@@ -14,6 +18,7 @@
 
 #include "overveckill/distance.hpp"
 #include "overveckill/metric.hpp"
+#include "overveckill/serialize.hpp"
 #include "overveckill/topk.hpp"
 #include "overveckill/types.hpp"
 
@@ -159,6 +164,97 @@ public:
             }
         }
         return true;
+    }
+
+    // ---- persistence ----------------------------------------------------
+    // Binary format: "OVKH" v1, dim, metric, params, RNG state, vectors,
+    // levels, tombstones, adjacency lists, entry point, max level.
+    // The RNG state is saved too, so adding vectors after a reload builds
+    // exactly the same graph as adding them to the original would have.
+    // load() checks the result with validate() and throws if it's malformed.
+
+    void save(std::ostream& out) const {
+        io::Writer w(out);
+        w.header("OVKH");
+        w.len(dim_);
+        w.metric(metric_);
+        w.len(params_.M);
+        w.len(params_.ef_construction);
+        w.len(params_.ef_search);
+        w.u(params_.seed);
+        std::ostringstream rng_state;
+        rng_state << rng_;
+        w.str(rng_state.str());
+
+        w.floats(data_);
+        w.ints(levels_);
+        w.ints(deleted_);
+        for (const auto& node : links_) {
+            for (const auto& layer : node) w.ints(layer);
+        }
+        w.u(entry_);
+        w.u(static_cast<std::int32_t>(max_level_));
+    }
+
+    static HnswIndex load(std::istream& in) {
+        io::Reader r(in);
+        r.header("OVKH", "HnswIndex");
+        const std::size_t dim = r.len();
+        if (dim == 0) throw SerializationError("HnswIndex: dim must be > 0");
+        const Metric metric = r.metric();
+        HnswParams params;
+        params.M = r.len();
+        params.ef_construction = r.len();
+        params.ef_search = r.len();
+        params.seed = r.u<std::uint64_t>();
+        if (params.M < 2 || params.ef_search == 0 || params.ef_construction < params.M) {
+            throw SerializationError("HnswIndex: bad params");
+        }
+
+        HnswIndex idx(dim, metric, params);
+        std::istringstream rng_state(r.str());
+        rng_state >> idx.rng_;
+        if (!rng_state) throw SerializationError("HnswIndex: bad RNG state");
+
+        idx.data_ = r.floats();
+        idx.levels_ = r.ints<std::uint8_t>();
+        idx.deleted_ = r.ints<std::uint8_t>();
+
+        const std::size_t n = idx.levels_.size();
+        if (idx.data_.size() != n * dim) throw SerializationError("HnswIndex: data size");
+        if (idx.deleted_.size() != n) throw SerializationError("HnswIndex: tombstone size");
+        for (auto d : idx.deleted_) {
+            if (d > 1) throw SerializationError("HnswIndex: bad tombstone flag");
+            idx.live_count_ += (d == 0);
+        }
+        for (float x : idx.data_) {
+            if (!std::isfinite(x)) throw SerializationError("HnswIndex: non-finite value");
+        }
+
+        idx.links_.resize(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            if (idx.levels_[i] > 30) throw SerializationError("HnswIndex: bad level");
+            idx.links_[i].resize(static_cast<std::size_t>(idx.levels_[i]) + 1);
+            for (auto& layer : idx.links_[i]) {
+                layer = r.ints<Id>();
+                if (layer.size() > params.M * 2) {
+                    throw SerializationError("HnswIndex: too many links");
+                }
+            }
+        }
+        idx.entry_ = r.u<Id>();
+        idx.max_level_ = r.u<std::int32_t>();
+
+        if (!idx.validate()) throw SerializationError("HnswIndex: graph failed validation");
+        return idx;
+    }
+
+    void save(const std::filesystem::path& path) const {
+        io::save_to_file(path, [this](std::ostream& out) { save(out); });
+    }
+
+    static HnswIndex load(const std::filesystem::path& path) {
+        return io::load_from_file(path, [](std::istream& in) { return load(in); });
     }
 
 private:

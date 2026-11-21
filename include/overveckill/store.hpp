@@ -1,6 +1,10 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
+#include <filesystem>
+#include <istream>
+#include <ostream>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -13,6 +17,7 @@
 #include "overveckill/index.hpp"
 #include "overveckill/metadata.hpp"
 #include "overveckill/metric.hpp"
+#include "overveckill/serialize.hpp"
 #include "overveckill/types.hpp"
 
 namespace overveckill {
@@ -105,6 +110,66 @@ public:
             out.push_back(Hit{s.key, n.distance, s.metadata});
         }
         return out;
+    }
+
+    // ---- persistence ----------------------------------------------------
+    // Binary format: "OVKS" v1, the index (in its own format), then one
+    // (key, slot, metadata) entry per record. Available when the index type
+    // has save/load (FlatIndex and HnswIndex both do).
+
+    void save(std::ostream& out) const
+        requires requires(const Index& i, std::ostream& o) { i.save(o); }
+    {
+        index_.save(out);
+        io::Writer w(out);
+        w.header("OVKS");
+        w.len(key_to_slot_.size());
+        // Slot order, so the same store always produces the same bytes.
+        for (std::size_t slot = 0; slot < slots_.size(); ++slot) {
+            if (!index_.contains(static_cast<Id>(slot))) continue;
+            w.str(slots_[slot].key);
+            w.u(static_cast<Id>(slot));
+            w.metadata(slots_[slot].metadata);
+        }
+    }
+
+    static BasicStore load(std::istream& in)
+        requires requires(std::istream& i) { { Index::load(i) } -> std::same_as<Index>; }
+    {
+        BasicStore store(Index::load(in));
+        io::Reader r(in);
+        r.header("OVKS", "Store");
+        const std::size_t n = r.len();
+        if (n != store.index_.size()) {
+            throw SerializationError("Store: record count does not match index");
+        }
+        store.slots_.resize(store.index_.slot_count());
+        for (std::size_t i = 0; i < n; ++i) {
+            std::string key = r.str();
+            const Id slot = r.u<Id>();
+            Metadata meta = r.metadata();
+            if (key.empty()) throw SerializationError("Store: empty key");
+            if (!store.index_.contains(slot) || !store.slots_[slot].key.empty()) {
+                throw SerializationError("Store: bad or duplicate slot");
+            }
+            if (!store.key_to_slot_.emplace(key, slot).second) {
+                throw SerializationError("Store: duplicate key");
+            }
+            store.slots_[slot] = SlotInfo{std::move(key), std::move(meta)};
+        }
+        return store;
+    }
+
+    void save(const std::filesystem::path& path) const
+        requires requires(const Index& i, std::ostream& o) { i.save(o); }
+    {
+        io::save_to_file(path, [this](std::ostream& out) { save(out); });
+    }
+
+    static BasicStore load(const std::filesystem::path& path)
+        requires requires(std::istream& i) { { Index::load(i) } -> std::same_as<Index>; }
+    {
+        return io::load_from_file(path, [](std::istream& in) { return load(in); });
     }
 
 private:

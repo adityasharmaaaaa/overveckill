@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(overveckill VERSION 0.2.0 LANGUAGES CXX)
+project(overveckill VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -51,7 +51,8 @@ if(OVK_BUILD_TESTS)
     tests/test_topk.cpp
     tests/test_flat_index.cpp
     tests/test_store.cpp
-    tests/test_hnsw.cpp)
+    tests/test_hnsw.cpp
+    tests/test_persistence.cpp)
   target_link_libraries(ovk_tests PRIVATE overveckill)
   target_include_directories(ovk_tests PRIVATE tests)
   ovk_configure(ovk_tests)
